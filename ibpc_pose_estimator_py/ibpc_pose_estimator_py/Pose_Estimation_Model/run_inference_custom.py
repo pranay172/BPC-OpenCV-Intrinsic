@@ -246,18 +246,63 @@ class PEM:
         torch.cuda.empty_cache()
 
         logging.info("=> Running pem model...")
-        with torch.no_grad():
-            input_data['dense_po'] = all_tem_pts.repeat(ninstance, 1, 1)
-            input_data['dense_fo'] = all_tem_feat.repeat(ninstance, 1, 1)
-            out = self.model(input_data)
+        batch_size = 12
 
-        if 'pred_pose_score' in out.keys():
-            pose_scores = out['pred_pose_score'] * out['score']
-        else:
-            pose_scores = out['score']
-        pose_scores = pose_scores.detach().cpu().numpy()
-        pred_rot = out['pred_R'].detach().cpu().numpy()
-        pred_trans = out['pred_t'].detach().cpu().numpy() * 1000
+        # Create storage for results
+        all_pred_pose_scores = []
+        all_pred_Rs = []
+        all_pred_ts = []
+
+        # Process in batches
+        for i in range(0, ninstance, batch_size):
+            end_idx = min(i + batch_size, ninstance)
+            batch_size_actual = end_idx - i
+            
+            # Create batch data
+            batch_data = {}
+            for key in input_data:
+                if isinstance(input_data[key], torch.Tensor):
+                    batch_data[key] = input_data[key][i:end_idx].clone()
+                else:
+                    batch_data[key] = input_data[key]
+            
+            # Add template data for just this batch
+            batch_data['dense_po'] = all_tem_pts.repeat(batch_size_actual, 1, 1)
+            batch_data['dense_fo'] = all_tem_feat.repeat(batch_size_actual, 1, 1)
+            
+            # Run inference on batch
+            with torch.no_grad():
+                batch_out = self.model(batch_data)
+            
+            # Store batch results
+            if 'pred_pose_score' in batch_out:
+                all_pred_pose_scores.append(batch_out['pred_pose_score'] * batch_data['score'])
+            else:
+                all_pred_pose_scores.append(batch_data['score'])
+            all_pred_Rs.append(batch_out['pred_R'])
+            all_pred_ts.append(batch_out['pred_t'])
+            
+            # Clear GPU memory
+            del batch_data, batch_out
+            torch.cuda.empty_cache()
+
+        # Combine results from all batches
+        pose_scores = torch.cat(all_pred_pose_scores, dim=0).detach().cpu().numpy()
+        pred_rot = torch.cat(all_pred_Rs, dim=0).detach().cpu().numpy()
+        pred_trans = torch.cat(all_pred_ts, dim=0).detach().cpu().numpy() * 1000
+
+        # with torch.no_grad():
+        #     input_data['dense_po'] = all_tem_pts.repeat(ninstance, 1, 1)
+        #     input_data['dense_fo'] = all_tem_feat.repeat(ninstance, 1, 1)
+        #     out = self.model(input_data)
+
+        # if 'pred_pose_score' in out.keys():
+        #     pose_scores = out['pred_pose_score'] * out['score']
+        # else:
+        #     pose_scores = out['score']
+        # pose_scores = pose_scores.detach().cpu().numpy()
+        # pred_rot = out['pred_R'].detach().cpu().numpy()
+        # pred_trans = out['pred_t'].detach().cpu().numpy() * 1000
 
         del all_tem_pts, all_tem_feat, input_data
         gc.collect()

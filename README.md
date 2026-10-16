@@ -16,6 +16,9 @@
   <a href="https://opencv.org/announcing-the-winners-of-the-first-perception-challenge-for-bin-picking-bpc/"><b>Winners announcement</b></a>
 </p>
 
+> [!NOTE]
+> You're on the **`oneshot`** branch: the work that came *after* the scored testing-phase submission on [`main`](../../tree/main). It runs pose inference in batches of 12, counts out-of-memory and other errors, and uses lower thresholds (0.35 for masks, 0.3 for poses) than the 0.4 / 0.4 described below. See [what changed](docs/APPROACH.md#the-oneshot-branch).
+
 ---
 
 The **[Perception Challenge for Bin-Picking (BPC)](https://bpc.opencv.org/)** was organized in 2025 by OpenCV, Intrinsic, BOP and the University of Hawaiʻi at Mānoa to benchmark **6DoF object pose estimation** in realistic industrial bin-picking scenes. Given a bin of cluttered, partially occluded parts, a solution must report where each requested part is and how it is oriented.

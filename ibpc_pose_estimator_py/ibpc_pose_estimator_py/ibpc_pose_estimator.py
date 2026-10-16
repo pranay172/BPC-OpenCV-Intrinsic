@@ -138,6 +138,13 @@ class PoseEstimator(Node):
 
         # Initialize the PEM models
         self.pem = PEM(checkpoints_path=self.checkpoints_path, device=self.device)
+
+        self.image_count = 0
+        self.ism_error_count = 0
+        self.pem_error_count = 0
+        self.ism_cuda_oom_count = 0
+        self.pem_cuda_oom_count = 0
+        self.pem_zero_est_count = 0
         
         # Create a Service
         srv_name = "/get_pose_estimates"
@@ -184,6 +191,7 @@ class PoseEstimator(Node):
             self.get_logger().error(f"Error in camera info: {e}")
             return []
         
+        self.image_count += 1
         pose_estimates = []
         self.get_logger().info("Looping through object IDs...")
         for obj_id in object_ids:
@@ -205,10 +213,13 @@ class PoseEstimator(Node):
                     rgb=photoneo.rgb,
                     depth=photoneo.depth,
                     cam_info=cam_info,
-                    seg_score_thresh=0.4)
+                    seg_score_thresh=0.35)
 
             except Exception as e:
                 self.get_logger().error(f"Error in instance segmentation: {e}")
+                self.ism_error_count += 1
+                if "CUDA out of memory" in str(e):
+                    self.ism_cuda_oom_count += 1
                 continue
             self.get_logger().info("Instance segmentation model completed.")
             
@@ -222,13 +233,25 @@ class PoseEstimator(Node):
                     depth=photoneo.depth,
                     cam_info=cam_info,
                     seg_data=ism_results,
-                    est_score_thresh=0.4)
+                    est_score_thresh=0.3)
                 pose_estimate_msgs = self.detections_to_pose_msgs(detections, obj_id)
                 pose_estimates.extend(pose_estimate_msgs)
             except Exception as e:
                 self.get_logger().error(f"Error in pose estimation: {e}")
+                self.pem_error_count += 1
+                if "CUDA out of memory" in str(e):
+                    self.pem_cuda_oom_count += 1
+                if "non-empty TensorList" in str(e):
+                    self.pem_zero_est_count += 1
                 continue
             self.get_logger().info("Pose estimation completed.")
+        
+        if self.image_count % 3 == 0:
+            self.get_logger().info(f"ISM error count: {self.ism_error_count}")
+            self.get_logger().info(f"PEM error count: {self.pem_error_count}")
+            self.get_logger().info(f"ISM CUDA OOM error count: {self.ism_cuda_oom_count}")
+            self.get_logger().info(f"PEM CUDA OOM error count: {self.pem_cuda_oom_count}")
+            self.get_logger().info(f"PEM zero estimates error count: {self.pem_zero_est_count}")
             
         return pose_estimates
 
@@ -271,7 +294,6 @@ def main(argv=sys.argv):
     pose_estimator = PoseEstimator()
     rclpy.spin(pose_estimator)
     rclpy.shutdown()
-
 
 if __name__ == "__main__":
     main()

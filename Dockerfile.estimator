@@ -63,7 +63,7 @@ RUN pip3 install --upgrade pip==25.0.1 && pip3 install --no-cache-dir \
     pycocotools==2.0.8 gorilla-core==0.2.7.8 \
     timm==1.0.15 einops==0.8.1 shapely==2.1.0 opencv-python==4.11.0.86 \
     xformers==0.0.29.post3 fvcore==0.1.5.post20221221 iopath==0.1.10 \
-    pytorch-lightning==2.5.1
+    pytorch-lightning==2.5.1 ultralytics==8.3.131
 
 ADD ${SERVICE_PACKAGE} /opt/ros/overlay/src/${SERVICE_PACKAGE}
 
@@ -84,13 +84,9 @@ FROM base
 ARG SERVICE_PACKAGE=ibpc_pose_estimator_py
 ARG SERVICE_EXECUTABLE_NAME=ibpc_pose_estimator
 
-RUN apt update \
-    && apt install curl -y \
-    && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2-testing/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
-
 # Install system dependencies
 RUN apt-get update \
+    && apt upgrade -y \
     && apt install -y ros-jazzy-rmw-zenoh-cpp python3-opencv python3-pip \
        python3-scipy python3-yaml python3-imageio python3-pandas python3-tk \
        python3-venv python3-full libgl1 libglvnd0 libglib2.0-0 \
@@ -108,7 +104,7 @@ RUN pip3 install --upgrade pip==25.0.1 && pip3 install --no-cache-dir \
     pycocotools==2.0.8 gorilla-core==0.2.7.8 \
     timm==1.0.15 einops==0.8.1 shapely==2.1.0 opencv-python==4.11.0.86 \
     xformers==0.0.29.post3 fvcore==0.1.5.post20221221 iopath==0.1.10 \
-    pytorch-lightning==2.5.1
+    pytorch-lightning==2.5.1 ultralytics==8.3.131
 
 COPY --from=overlay /opt/ros/underlay/install /opt/ros/underlay/install
 COPY --from=overlay /opt/ros/overlay/install /opt/ros/overlay/install

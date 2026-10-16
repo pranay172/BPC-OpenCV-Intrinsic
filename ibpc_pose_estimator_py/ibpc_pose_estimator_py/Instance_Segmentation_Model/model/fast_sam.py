@@ -10,7 +10,8 @@ import logging
 import os.path as osp
 from typing import Any, Dict, List, Optional, Tuple
 import pytorch_lightning as pl
-from ultralytics import yolo  # noqa
+# updated import ultralytics
+from ultralytics.models.yolo.segment.predict import SegmentationPredictor
 from ultralytics.nn.autobackend import AutoBackend
 
 
@@ -39,7 +40,7 @@ class CustomYOLO(YOLO):
         self.overrides["mode"] = "predict"
         self.overrides["save"] = False
 
-        self.predictor = yolo.v8.segment.SegmentationPredictor(
+        self.predictor = SegmentationPredictor(
             overrides=self.overrides, _callbacks=self.callbacks
         )
 
@@ -80,9 +81,9 @@ class FastSAM(object):
     ):
         self.model = CustomYOLO(
             model=checkpoint_path,
-            iou=config.iou_threshold,
-            conf=config.conf_threshold,
-            max_det=config.max_det,
+            iou=config['iou_threshold'],
+            conf=config['conf_threshold'],
+            max_det=config['max_det'],
             selected_device=device,
             segmentor_width_size=segmentor_width_size,
         )
