@@ -1,12 +1,12 @@
 # todo(Yadunund): Add copyright.
-
-import cv2
+import os
+import torch
 from cv_bridge import CvBridge
 import numpy as np
+import json
 from scipy.spatial.transform import Rotation
 import sys
 from typing import List, Optional, Union
-
 from geometry_msgs.msg import Pose as PoseMsg
 from ibpc_interfaces.msg import Camera as CameraMsg
 from ibpc_interfaces.msg import Photoneo as PhotoneoMsg
@@ -16,6 +16,33 @@ from ibpc_interfaces.srv import GetPoseEstimates
 import rclpy
 from rclpy.node import Node
 
+# Reduce VRAM usage by reducing fragmentation
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+BASE_DIR = "/opt/ros/overlay/src/ibpc_pose_estimator_py/ibpc_pose_estimator_py"
+sys.path.append(BASE_DIR)
+
+ISM_DIR = os.path.join(BASE_DIR, 'Instance_Segmentation_Model')
+sys.path.append(ISM_DIR)
+sys.path.append(os.path.join(ISM_DIR, 'provider'))
+sys.path.append(os.path.join(ISM_DIR, 'utils'))
+sys.path.append(os.path.join(ISM_DIR, 'model'))
+sys.path.append(os.path.join(ISM_DIR, 'segment_anything'))
+
+PEM_DIR = os.path.join(BASE_DIR, 'Pose_Estimation_Model')
+sys.path.append(PEM_DIR)
+sys.path.append(os.path.join(PEM_DIR, 'config'))
+sys.path.append(os.path.join(PEM_DIR, 'utils'))
+sys.path.append(os.path.join(PEM_DIR, 'model'))
+sys.path.append(os.path.join(PEM_DIR, 'model', 'pointnet2'))
+
+RENDER_DIR = os.path.join(BASE_DIR, 'Render')
+sys.path.append(RENDER_DIR)
+sys.path.append(os.path.join(RENDER_DIR, 'blender'))
+
+from Instance_Segmentation_Model.run_inference_custom import ISM
+from Pose_Estimation_Model.run_inference_custom import PEM
+from Render.template_renderer import TemplateRenderer
 
 # Helper functions
 def ros_pose_to_mat(pose: PoseMsg):
@@ -59,7 +86,10 @@ class Camera:
         Raises:
            TypeError: If the input `msg` is not of the expected type.
         """
-        br = CvBridge()
+        try:
+            br = CvBridge()
+        except Exception as e:
+            raise RuntimeError("Failed to initialize CvBridge") from e
 
         if not isinstance(msg, (CameraMsg, PhotoneoMsg)):
             raise TypeError("Input message must be of type CameraMsg or PhotoneoMsg")
@@ -89,9 +119,31 @@ class PoseEstimator(Node):
         if self.model_dir == "":
             raise Exception("ROS parameter model_dir not set.")
         self.get_logger().info(f"Model directory set to {self.model_dir}.")
+
+        # 3d_models directory
+        self.cads_dir = "/opt/ros/underlay/install/3d_models"
+        render = TemplateRenderer(
+            blender_path=os.path.join(RENDER_DIR, "blender"),
+            models_dir=self.cads_dir,
+            output_dir=self.model_dir)
+        render.verify_templates()
+        
+        # Configure the device
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.get_logger().info(f"Using device: {self.device}")
+        
+        # Initialize the ISM models
+        self.checkpoints_path = os.path.join(self.model_dir, "checkpoints")
+        self.ism = ISM(checkpoints_path=self.checkpoints_path, segmentor_model="sam", device=self.device)
+
+        # Initialize the PEM models
+        self.pem = PEM(checkpoints_path=self.checkpoints_path, device=self.device)
+        
+        # Create a Service
         srv_name = "/get_pose_estimates"
         self.get_logger().info(f"Pose estimates can be queried over srv {srv_name}.")
         self.srv = self.create_service(GetPoseEstimates, srv_name, self.srv_cb)
+        self.get_logger().info(f"Service {srv_name} created.")
 
     def srv_cb(self, request, response):
         if len(request.object_ids) == 0:
@@ -101,10 +153,12 @@ class PoseEstimator(Node):
             self.get_logger().warn("Received request with insufficient cameras.")
             return response
         try:
+            self.get_logger().info("Received request for pose estimates.")
             cam_1 = Camera(request.cameras[0])
             cam_2 = Camera(request.cameras[1])
             cam_3 = Camera(request.cameras[2])
             photoneo = Camera(request.photoneo)
+            self.get_logger().info("Cameras initialized successfully.")
             response.pose_estimates = self.get_pose_estimates(
                 request.object_ids, cam_1, cam_2, cam_3, photoneo
             )
@@ -120,25 +174,102 @@ class PoseEstimator(Node):
         cam_3: Camera,
         photoneo: Camera,
     ) -> List[PoseEstimateMsg]:
-
+        
+        try:
+            self.get_logger().info("Starting pose estimation...")
+            cam_info = {}
+            cam_info["cam_K"] = list(np.array(photoneo.intrinsics).flatten())
+            cam_info["depth_scale"] = 0.1
+        except Exception as e:
+            self.get_logger().error(f"Error in camera info: {e}")
+            return []
+        
         pose_estimates = []
-        print(f"Received request to estimates poses for object_ids: {object_ids}")
-        """
-            Your implementation goes here.
-            msg = PoseEstimateMsg()
-            # your logic here.
-            pose_estimates.append(msg)
-        """
+        self.get_logger().info("Looping through object IDs...")
+        for obj_id in object_ids:
+            try:
+                self.get_logger().info(f"Processing object ID: {obj_id}")
+                cad_path = os.path.join(self.cads_dir, f"obj_{obj_id:06d}.ply")
+                if not os.path.exists(cad_path):
+                    self.get_logger().error(f"CAD file not found: {cad_path}")
+                    continue
+            except Exception as e:
+                self.get_logger().error(f"Error in CAD path: {e}")
+                continue
+            # Run the instance segmentation model
+            try:
+                self.get_logger().info("Running instance segmentation model...")
+                ism_results = self.ism.run_inference(
+                    output_dir=self.model_dir,
+                    cad_path=cad_path,
+                    rgb=photoneo.rgb,
+                    depth=photoneo.depth,
+                    cam_info=cam_info,
+                    seg_score_thresh=0.4)
+
+            except Exception as e:
+                self.get_logger().error(f"Error in instance segmentation: {e}")
+                continue
+            self.get_logger().info("Instance segmentation model completed.")
+            
+            # Run the pose estimation model
+            try:
+                self.get_logger().info("Running pose estimation model...")
+                detections = self.pem.run_inference(
+                    output_dir=self.model_dir,
+                    cad_path=cad_path,
+                    rgb=photoneo.rgb,
+                    depth=photoneo.depth,
+                    cam_info=cam_info,
+                    seg_data=ism_results,
+                    est_score_thresh=0.4)
+                pose_estimate_msgs = self.detections_to_pose_msgs(detections, obj_id)
+                pose_estimates.extend(pose_estimate_msgs)
+            except Exception as e:
+                self.get_logger().error(f"Error in pose estimation: {e}")
+                continue
+            self.get_logger().info("Pose estimation completed.")
+            
         return pose_estimates
 
+    def detections_to_pose_msgs(self, detections, obj_id):
+        pose_estimate_msgs = []
+        
+        for detection in detections:
+            # Create a new Pose message
+            pose_estimate = PoseEstimateMsg()
+
+            pose_estimate.obj_id = int(obj_id)
+            pose_estimate.score = detection['score']
+            
+            # Get rotation matrix and translation vector
+            rot_matrix = np.array(detection['R']).reshape(3, 3)
+            trans_vector = np.array(detection['t'])
+            
+            # Convert rotation matrix to quaternion
+            r = Rotation.from_matrix(rot_matrix)
+            quat = r.as_quat()  # Returns x, y, z, w
+            
+            # Set orientation (quaternion)
+            pose_estimate.pose.orientation.x = quat[0]
+            pose_estimate.pose.orientation.y = quat[1]
+            pose_estimate.pose.orientation.z = quat[2]
+            pose_estimate.pose.orientation.w = quat[3]
+            
+            # Set position (translation)
+            pose_estimate.pose.position.x = trans_vector[0]
+            pose_estimate.pose.position.y = trans_vector[1]
+            pose_estimate.pose.position.z = trans_vector[2]
+            
+            # Add to list of pose messages
+            pose_estimate_msgs.append(pose_estimate)
+        
+        return pose_estimate_msgs
 
 def main(argv=sys.argv):
     rclpy.init(args=argv)
-
     pose_estimator = PoseEstimator()
-
     rclpy.spin(pose_estimator)
-
     rclpy.shutdown()
 
 

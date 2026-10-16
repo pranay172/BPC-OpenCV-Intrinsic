@@ -1,8 +1,10 @@
 ibpc_pose_estimator_py/ibpc_pose_estimator_py/__pycache__/
 ibpc_tester/ibpc_tester/__pycache__/
-models/
+models/*
+!models/README.md
+ibpc_pose_estimator_py/ibpc_pose_estimator_py/Render/blender/
+ipd/
 *.__pycache__
 *.pyc
 *.egg-info
-dist/
 *.log

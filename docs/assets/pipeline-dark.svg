@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 600" width="1000" height="600" role="img" aria-label="Pipeline: CAD models are rendered into 42 template views at startup; for each request SAM proposes masks, DINOv2 scores them against the templates, SAM-6D's pose estimator recovers rotation and translation, and poses are returned over ROS 2">
+<style>
+  text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif; fill: #e6edf3; }
+  .mono { font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace; }
+  .muted { fill: #9198a1; }
+  .lane { font-size: 12px; font-weight: 700; letter-spacing: 1.6px; fill: #9198a1; }
+  .h { font-size: 16px; font-weight: 700; }
+  .b { font-size: 13.5px; fill: #9198a1; }
+  .card { fill: #161b22; stroke: #30363d; stroke-width: 1.2; }
+  .arrow { stroke: #9198a1; stroke-width: 1.8; fill: none; }
+  .dash { stroke: #9198a1; stroke-width: 1.5; fill: none; stroke-dasharray: 5 5; }
+</style>
+<defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#9198a1"/>
+  </marker>
+</defs>
+<rect x="1" y="1" width="998" height="598" rx="16" fill="#0d1117" stroke="#30363d" stroke-width="1.2"/>
+<text x="32" y="38" class="lane">① ONCE, WHEN THE CONTAINER STARTS</text>
+<rect class="card" x="32" y="54" width="260" height="104" rx="10"/>
+<rect x="32" y="54" width="5" height="104" rx="2.5" fill="#f0883e"/>
+<text x="52" y="84" class="h" style="font-size:16px">CAD models</text>
+<text x="52" y="110" class="b mono">obj_XXXXXX.ply</text>
+<text x="52" y="131" class="b">+ models_info.json, mounted</text>
+<text x="52" y="152" class="b">by the challenge harness</text>
+<rect class="card" x="342" y="54" width="270" height="104" rx="10"/>
+<rect x="342" y="54" width="5" height="104" rx="2.5" fill="#f0883e"/>
+<text x="362" y="84" class="h" style="font-size:16px">BlenderProc · Blender 4.1</text>
+<text x="362" y="110" class="b">42 viewpoints around each part</text>
+<text x="362" y="131" class="b">rendered on the GPU</text>
+<rect class="card" x="662" y="54" width="306" height="104" rx="10"/>
+<rect x="662" y="54" width="5" height="104" rx="2.5" fill="#f0883e"/>
+<text x="682" y="84" class="h" style="font-size:16px">Template bank</text>
+<text x="682" y="110" class="b">RGB · mask · XYZ for every view</text>
+<text x="682" y="131" class="b mono">model_dir/templates/obj_XXXXXX/</text>
+<path class="arrow" d="M292 106 H336" marker-end="url(#ah)"/>
+<path class="arrow" d="M612 106 H656" marker-end="url(#ah)"/>
+<text x="32" y="212" class="lane">② FOR EVERY REQUEST, FOR EVERY OBJECT ID IT ASKS ABOUT</text>
+<rect class="card" x="32" y="228" width="186" height="160" rx="10"/>
+<rect x="32" y="228" width="5" height="160" rx="2.5" fill="#4493f8"/>
+<text x="52" y="258" class="h" style="font-size:16px">Photoneo frame</text>
+<text x="52" y="284" class="b">intensity image</text>
+<text x="52" y="305" class="b">depth map</text>
+<text x="52" y="326" class="b">intrinsics K</text>
+<text x="52" y="368" class="b" style="font-size:12px;font-style:italic">3 other cameras unused</text>
+<rect class="card" x="252" y="228" width="190" height="160" rx="10"/>
+<rect x="252" y="228" width="5" height="160" rx="2.5" fill="#ab7df8"/>
+<text x="272" y="258" class="h" style="font-size:16px">SAM ViT-H</text>
+<text x="272" y="284" class="b">automatic mask</text>
+<text x="272" y="305" class="b">generator: every blob</text>
+<text x="272" y="326" class="b">is a candidate</text>
+<rect class="card" x="476" y="228" width="314" height="236" rx="10"/>
+<rect x="476" y="228" width="5" height="236" rx="2.5" fill="#3fb950"/>
+<text x="496" y="258" class="h">Which mask is my part?</text>
+<text x="496" y="280" class="b">DINOv2 ViT-L/14 vs. the templates</text>
+<circle cx="502" cy="307.5" r="5" fill="#4493f8"/>
+<text x="516" y="312" style="font-size:13.5px;font-weight:700">semantic</text>
+<text x="604" y="312" class="b" style="font-size:12.5px">CLS cosine, top-5 views</text>
+<circle cx="502" cy="337.5" r="5" fill="#ab7df8"/>
+<text x="516" y="342" style="font-size:13.5px;font-weight:700">appearance</text>
+<text x="604" y="342" class="b" style="font-size:12.5px">masked patch similarity</text>
+<circle cx="502" cy="367.5" r="5" fill="#f0883e"/>
+<text x="516" y="372" style="font-size:13.5px;font-weight:700">geometric</text>
+<text x="604" y="372" class="b" style="font-size:12.5px">CAD points placed via depth</text>
+<line x1="496" y1="400" x2="770" y2="400" stroke="#30363d"/>
+<text x="496" y="426" class="mono" style="font-size:13.5px">(s + a + g·v) / (2 + v)</text>
+<text x="496" y="448" class="b" style="font-size:12.5px">v = visible ratio · keep masks ≥ 0.4</text>
+<rect class="card" x="824" y="228" width="144" height="160" rx="10"/>
+<rect x="824" y="228" width="5" height="160" rx="2.5" fill="#f85149"/>
+<text x="844" y="258" class="h" style="font-size:15px">SAM-6D PEM</text>
+<text x="844" y="284" class="b">coarse → fine</text>
+<text x="844" y="305" class="b">point matching</text>
+<text x="844" y="326" class="b mono">2048 scene pts</text>
+<text x="844" y="347" class="b mono">1024 model pts</text>
+<path class="arrow" d="M218 296 H246" marker-end="url(#ah)"/>
+<path class="arrow" d="M442 296 H470" marker-end="url(#ah)"/>
+<path class="arrow" d="M790 296 H818" marker-end="url(#ah)"/>
+<path class="arrow" d="M700 158 V222" marker-end="url(#ah)"/>
+<path class="arrow" d="M898 158 V222" marker-end="url(#ah)"/>
+<text x="708" y="196" class="b" style="font-size:12px">templates</text>
+<text x="906" y="196" class="b" style="font-size:12px">templates</text>
+<path class="dash" d="M130 388 V496 H866 V394" marker-end="url(#ah)"/>
+<path class="dash" d="M645 496 V470" marker-end="url(#ah)"/>
+<text x="146" y="488" class="b" style="font-size:12.5px">depth + K</text>
+<path class="arrow" d="M936 388 V530" marker-end="url(#ah)"/>
+<rect x="32" y="536" width="936" height="46" rx="10" fill="#0c2d6b" stroke="#4493f8" stroke-width="1.2"/>
+<text x="52" y="564" style="font-size:14px"><tspan style="font-weight:700">③ Answer</tspan><tspan class="muted">   pose score × mask score ≥ 0.4  →  rotation as a quaternion, translation in mm  →  ROS 2 </tspan><tspan class="mono" style="font-size:13px">/get_pose_estimates</tspan></text>
+</svg>
